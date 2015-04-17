@@ -76,7 +76,7 @@ abstract class Enumeration (initial: Int) extends Serializable {
 
   /** The mapping from the integer used to identify values to their
     * names. */
-  private val nmap: mutable.Map[Int, String] = new mutable.HashMap
+  private lazy val nmap: Map[Int, String] = buildNameMap()
 
   /** The values of this enumeration as a set.
    */
@@ -153,7 +153,7 @@ abstract class Enumeration (initial: Int) extends Serializable {
    */
   protected final def Value(i: Int, name: String): Value = new Val(i, name)
 
-  private def populateNameMap() {
+  private def buildNameMap(): Map[Int, String] = {
     val fields = getClass.getDeclaredFields
     def isValDef(m: JMethod) = fields exists (fd => fd.getName == m.getName && fd.getType == m.getReturnType)
 
@@ -162,22 +162,25 @@ abstract class Enumeration (initial: Int) extends Serializable {
                                                    classOf[Value].isAssignableFrom(m.getReturnType) &&
                                                    m.getDeclaringClass != classOf[Enumeration] &&
                                                    isValDef(m))
-    methods foreach { m =>
+
+    val identifiedNames = methods map { m =>
       val name = m.getName
       // invoke method to obtain actual `Value` instance
       val value = m.invoke(this).asInstanceOf[Value]
-      // verify that outer points to the correct Enumeration: ticket #3616.
-      if (value.outerEnum eq thisenum) {
-        val id = Int.unbox(classOf[Val] getMethod "id" invoke value)
-        nmap += ((id, name))
-      }
+      (name, value)
+    } withFilter {_._2.outerEnum eq thisenum} map {case (name, value) =>
+      val id = Int.unbox(classOf[Val] getMethod "id" invoke value)
+      (id, name)
     }
+    println(s"this = $this identified=${identifiedNames.toMap}")
+    identifiedNames.toMap
   }
+
 
   /* Obtains the name for the value with id `i`. If no name is cached
    * in `nmap`, it populates `nmap` using reflection.
    */
-  private def nameOf(i: Int): String = synchronized { nmap.getOrElse(i, { populateNameMap() ; nmap(i) }) }
+  private def nameOf(i: Int): String = nmap(i)
 
   /** The type of the enumerated values. */
   @SerialVersionUID(7091335633555234129L)
